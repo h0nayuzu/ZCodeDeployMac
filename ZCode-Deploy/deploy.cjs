@@ -32,8 +32,10 @@ const LitDate = 'name:"Current Date",source:"current_date"';
 const LitSkills = 'name:"Skills",source:"skills"';
 const LitUserCtx = 'name:"Request User Context",source:"request_user_context"';
 
-const CJS_REL = 'Contents/Resources/glm/zcode.cjs';
-const META_REL = 'Contents/Resources/glm/.node-bundle-meta.json';
+const IS_WIN = process.platform === 'win32';
+const CJS_REL = IS_WIN ? 'resources\\glm\\zcode.cjs' : 'Contents/Resources/glm/zcode.cjs';
+const META_REL = path.join('resources', 'glm', '.node-bundle-meta.json');
+const APP_REL = IS_WIN ? '' : 'Contents/MacOS/';
 
 // ---------- 输出 ----------
 const C = { cyan: '\x1b[36m', green: '\x1b[32m', gray: '\x1b[90m', yellow: '\x1b[33m', red: '\x1b[31m', reset: '\x1b[0m' };
@@ -52,6 +54,7 @@ function testZcodeDir(dir) {
 }
 
 function zcodeDirFromProcesses() {
+    if (IS_WIN) return null;
     try {
         const out = cp.execSync('ps -Ao command', { encoding: 'utf8', timeout: 10000 });
         for (const line of out.split('\n')) {
@@ -70,9 +73,14 @@ function findZcodeDir() {
         const d = fs.readFileSync(DirCache, 'utf8').trim();
         if (testZcodeDir(d)) return d;
     }
-    const cands = ['/Applications/ZCode.app', path.join(os.homedir(), 'Applications/ZCode.app')];
+    const cands = IS_WIN
+        ? [path.join(process.env.LOCALAPPDATA || '', 'Programs', 'zcode'),
+          path.join(process.env.LOCALAPPDATA || '', 'Programs', 'ZCode'),
+          'C:\\zcode', 'D:\\app\\zcode', 'D:\\zcode']
+        : ['/Applications/ZCode.app', path.join(os.homedir(), 'Applications/ZCode.app')];
     for (const c of cands) if (testZcodeDir(c)) return c;
     // 轻量扫描 (两个应用目录, 只看一层)
+    if (IS_WIN) return null;
     for (const root of ['/Applications', path.join(os.homedir(), 'Applications')]) {
         try {
             for (const e of fs.readdirSync(root)) {
@@ -218,12 +226,21 @@ function checkSyntax(content) {
 // 所以必须同时匹配 MacOS 和 Frameworks，不能只匹配 Contents/MacOS
 function zcodeRunning() {
     try {
+        if (IS_WIN) {
+            const out = cp.execSync('tasklist /FI "IMAGENAME eq ZCode.exe" /FO CSV /NH', { encoding: 'utf8', timeout: 8000 });
+            return (out.match(/ZCode\.exe/gi) || []).length;
+        }
         const out = cp.execSync("pgrep -f 'ZCode[.]app/Contents/(MacOS|Frameworks)/'", { encoding: 'utf8', timeout: 8000 });
         return out.split('\n').filter((s) => s.trim()).length;
     } catch (e) { return 0; }
 }
 
 function stopZCode() {
+    if (IS_WIN) {
+        try { cp.execSync('taskkill /IM ZCode.exe /T /F', { timeout: 10000, stdio: 'ignore' }); } catch (e) { }
+        cp.execSync('timeout /t 2 /nobreak >nul', { stdio: 'ignore', shell: 'cmd.exe' });
+        return;
+    }
     try { cp.execSync("osascript -e 'tell application \"ZCode\" to quit'", { timeout: 10000, stdio: 'ignore' }); } catch (e) { }
     for (let i = 0; i < 6; i++) {
         if (zcodeRunning() === 0) break;
@@ -237,7 +254,10 @@ function stopZCode() {
 
 function startZCode(appPath) {
     if (!fs.existsSync(appPath)) { Warn2('未找到 ' + appPath + '，请手动启动 ZCode'); return; }
-    try { cp.spawn('open', [appPath], { detached: true, stdio: 'ignore' }).unref(); } catch (e) { }
+    try {
+        if (IS_WIN) cp.spawn('cmd.exe', ['/c', 'start', '', path.join(appPath, 'ZCode.exe')], { detached: true, stdio: 'ignore' }).unref();
+        else cp.spawn('open', [appPath], { detached: true, stdio: 'ignore' }).unref();
+    } catch (e) { }
     cp.execSync('sleep 5');
     Good('ZCode 已启动 (' + zcodeRunning() + ' 个进程)');
 }
