@@ -205,9 +205,11 @@ function checkSyntax(content) {
 }
 
 // ---------- 重启 (macOS) ----------
+// 注意: Electron 主进程在 ps 里显示为 "ZCode"，Helper 在 Contents/Frameworks 下，
+// 所以必须同时匹配 MacOS 和 Frameworks，不能只匹配 Contents/MacOS
 function zcodeRunning() {
     try {
-        const out = cp.execSync("pgrep -f 'ZCode.app/Contents/MacOS/ZCode'", { encoding: 'utf8', timeout: 8000 });
+        const out = cp.execSync("pgrep -f 'ZCode[.]app/Contents/(MacOS|Frameworks)/'", { encoding: 'utf8', timeout: 8000 });
         return out.split('\n').filter((s) => s.trim()).length;
     } catch (e) { return 0; }
 }
@@ -219,7 +221,7 @@ function stopZCode() {
         cp.execSync('sleep 1');
     }
     if (zcodeRunning() > 0) {
-        try { cp.execSync("pkill -f 'ZCode.app/Contents/MacOS/ZCode'", { timeout: 8000, stdio: 'ignore' }); } catch (e) { }
+        try { cp.execSync("pkill -f 'ZCode[.]app/Contents/(MacOS|Frameworks)/'", { timeout: 8000, stdio: 'ignore' }); } catch (e) { }
         cp.execSync('sleep 2');
     }
 }

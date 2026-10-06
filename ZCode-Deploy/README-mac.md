@@ -73,7 +73,9 @@ system 层应为 `人格.txt` 全文，且不含 `You are ZCode`、安全策略�
 
 | 事项 | 说明 |
 |------|------|
-| 重启方式 | `osascript` 优雅退出 ZCode，退不掉再 `pkill`；随后 `open ZCode.app`。跑脚本会**关掉当前 ZCode 窗口**，介意就加 `--no-restart` |
+| 生效条件 | `zcode.cjs` 在进程启动时加载——**已运行的 ZCode 不会热加载补丁**，必须完全退出（⌘Q，不是关窗口）再重开才生效 |
+| 重启方式 | `osascript` 优雅退出 ZCode，退不掉再 `pkill`；随后 `open ZCode.app`。⚠️ 如果你的 AI 会话正跑在 ZCode 里，不带 `--no-restart` 跑 install 会把会话一起杀掉 |
+| 进程检测 | Electron 主进程在 ps 里显示为 `ZCode`、Helper 在 `Contents/Frameworks` 下，检测同时匹配 `MacOS` 与 `Frameworks`（v2.1.0-mac 已修） |
 | 代码签名 | 本工具只改 Resources 里的 `zcode.cjs`（非可执行文件），正常不影响启动。万一改完 ZCode 打不开，执行 `codesign --force --sign - /Applications/ZCode.app` 重签即可 |
 | 双击被拦 | Gatekeeper 拦截 quarantined 脚本时：右键 `部署.command` → 打开；或 `xattr -cr .` |
 | 权限 | `zcode.cjs` 属主是当前用户（App 安装到自己目录时），无需 sudo；若装在别处属主是 root，`install` 前先 `sudo chown -R "$USER" /Applications/ZCode.app` 或用 sudo 跑 |
