@@ -43,6 +43,22 @@ powershell -ExecutionPolicy Bypass -File deploy.ps1 status     # 查看状态
 powershell -ExecutionPolicy Bypass -File deploy.ps1 diag       # 注入点诊断
 ```
 
+### macOS
+
+双击 `部署.command`（等价 `部署.bat`），或命令行：
+
+```bash
+./deploy.sh install          # 部署
+./deploy.sh restore          # 恢复原版
+./deploy.sh status           # 查看状态
+./deploy.sh diag             # 注入点诊断
+./deploy.sh install --no-restart
+```
+
+引擎为 `deploy.cjs`（Node），补丁逻辑与 PowerShell 版逐条同源；自动检测
+`/Applications/ZCode.app`（也可 `ZCODE_DIR=/path/to/ZCode.app` 指定）。
+macOS 专属说明（重启方式、代码签名、Gatekeeper）见 **[README-mac.md](ZCode-Deploy/README-mac.md)**。
+
 ## 换人格
 
 直接编辑 `人格.txt`，保存，开新对话生效。不需要重启，不需要重跑部署。

@@ -6,8 +6,19 @@
 // ============================================
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const target = process.argv[2] || 'D:\\app\\zcode\\resources\\glm\\zcode.cjs';
+// 默认目标: 命令行参数 > 环境变量 ZCODE_DIR > 常见安装位置 (macOS / Windows)
+function defaultTarget() {
+    const cands = [];
+    if (process.env.ZCODE_DIR) cands.push(path.join(process.env.ZCODE_DIR, 'Contents/Resources/glm/zcode.cjs'));
+    cands.push('/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs');
+    cands.push(path.join(os.homedir(), 'Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'));
+    cands.push('D:\\app\\zcode\\resources\\glm\\zcode.cjs');
+    for (const c of cands) { if (fs.existsSync(c)) return c; }
+    return cands[0];
+}
+const target = process.argv[2] || defaultTarget();
 const personaFile = path.join(__dirname, '人格.txt');
 
 let fail = 0;
@@ -120,12 +131,52 @@ for (const item of sections) {
     }
 }
 
+// ---- 动态自由变量解析（不再硬编码 FVs/IJs 等压缩变量名）----
+// 扫描函数体内未被声明的标识符：后面跟 "(" 的给可调用桩，require 给真 require，
+// 其余给空串。这样无论 ZCode 以后把变量改成什么名字，验证器都能执行补丁后的函数。
+const RESERVED = new Set(['function', 'return', 'let', 'const', 'var', 'if', 'else', 'try', 'catch', 'finally',
+    'new', 'typeof', 'instanceof', 'in', 'of', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue',
+    'throw', 'delete', 'void', 'this', 'true', 'false', 'null', 'undefined', 'name', 'source', 'injectionTarget',
+    'cacheHint', 'chars', 'tokens', 'content', 'preview']);
+
+function freeVarsOf(body) {
+    const header = body.match(/^function\s+[A-Za-z_$][\w$]*\s*\(([^)]*)\)\s*\{/);
+    if (!header) return null;
+    const inner = body.slice(header[0].length, body.length - 1);
+    const params = new Set(header[1].split(',').map((s) => s.trim()).filter(Boolean));
+    const locals = new Set();
+    let m;
+    const declRe = /(?:\blet\b|\bvar\b|\bconst\b)\s+([A-Za-z_$][\w$]*)/g;
+    while ((m = declRe.exec(inner)) !== null) locals.add(m[1]);
+    const fnRe = /function\s+([A-Za-z_$][\w$]*)\s*\(/g;
+    while ((m = fnRe.exec(inner)) !== null) locals.add(m[1]);
+    const vals = {};
+    const seen = new Set();
+    const idRe = /[A-Za-z_$][\w$]*/g;
+    while ((m = idRe.exec(inner)) !== null) {
+        const id = m[0];
+        if (params.has(id) || locals.has(id) || RESERVED.has(id) || seen.has(id)) continue;
+        seen.add(id);
+        if (id === 'require') { vals[id] = require; continue; }
+        if (/^\s*\(/.test(inner.slice(m.index + id.length))) vals[id] = function () { return ''; };
+        else vals[id] = '';
+    }
+    return vals;
+}
+
+function callExtractedFn(fnName, fnBody, callArgsSrc) {
+    const vals = freeVarsOf(fnBody);
+    const names = Object.keys(vals || {});
+    const maker = new Function(...names, fnBody + '; return ' + fnName + '(' + callArgsSrc + ');');
+    return maker(...names.map((k) => vals[k]));
+}
+
 // ---- 5. CLI Prefix 实际返回空串 ----
 const jmeName = findFnForLiteral('name:"CLI Prefix",source:"cli_prefix"');
 const jmeBody = jmeName ? extractFn(jmeName) : null;
 if (jmeBody) {
     try {
-        const section = new Function('wm', 'FVs', jmeBody + '; return ' + jmeName + '();')(() => 0, '');
+        const section = callExtractedFn(jmeName, jmeBody, '');
         check('CLI Prefix 片段内容为空 (' + jmeName + ')', section && section.content === '');
     } catch (e) {
         check('CLI Prefix 片段内容为空', false, e.message);
@@ -139,7 +190,7 @@ const idName = findFnForLiteral('name:"Agent Identity",source:"identity"');
 const idBody = idName ? extractFn(idName) : null;
 if (idBody) {
     try {
-        const section = new Function('require', 'wm', 'jVs', idBody + '; return ' + idName + '({});')(require, () => 0, () => 'FALLBACK');
+        const section = callExtractedFn(idName, idBody, '{}');
         check('Agent Identity 读到人格文件 (' + idName + ')', section && section.content === persona,
               section ? section.content.length + ' chars' : 'null');
     } catch (e) {
